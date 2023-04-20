@@ -1,74 +1,108 @@
 #include <iostream>
+#include <cstdarg>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
 
-#define MESSAGE_MAX_SIZE 8192
+#define DEBUG_MESSAGE_MAX_SIZE 8192
 
 struct logger_configuration {
+public:
+    enum log_level : uint16_t {
+        DEBUG = 0,
+        INFO,
+        WARNING,
+        ERROR
+    };
+
+public:
+    explicit logger_configuration(log_level level) :
+    _level(level),
+    show_file_name(false),
+    show_function_name(false),
+    show_line_number(false) {
+    }
+
+    std::string get_level_string() const {
+        switch (this->_level) {
+            case log_level::DEBUG: return "DEBUG";
+            case log_level::INFO: return "INFO";
+            case log_level::WARNING: return "WARNING";
+            case log_level::ERROR: return "ERROR";
+        }
+    }
+
+public:
 	bool show_file_name;
 	bool show_function_name;
 	bool show_line_number;
 	std::string file_path;
+
+private:
+    log_level _level;
 };
 
 class logger {
 public:
-	enum log_level : uint16_t {
-		DEBUG = 0,
-		INFO,
-		WARNING,
-		ERROR
-	};
-
-	using log_level_string = std::string;
-
-public:
-	static logger& default_logger() {
-		static logger LOGGER;
-
-		return LOGGER;
-	}
-
-	void set_configuration(logger_configuration const& configuration) {
-		this->_configuration = configuration;
-	}
-
-	void log(log_level level, std::string& file_name, std::string& function_name, std::string& line_number, char const* format, char const* ...) {
+	static void log(logger_configuration const& configuration, std::string& file_name, std::string& function_name, std::string& line_number, char const* format, ...) {
 		std::stringstream ss;
 
-		ss << this->get_current_timestamp_string() << ' ';
-		ss << '[' << logger::__LEVELS[level] << "] ";
+		ss << logger::get_current_timestamp_string() << ' ';
+		ss << '[' << configuration.get_level_string() << "] ";
 
-		if (this->_configuration.show_file_name) {
+		if (configuration.show_file_name) {
 			ss << file_name << ' ';
 		}
 
-		if (this->_configuration.show_function_name) {
+		if (configuration.show_function_name) {
 			ss << function_name << ' ';
 		}
 
-		if (this->_configuration.show_line_number) {
+		if (configuration.show_line_number) {
 			ss << line_number << ' ';
 		}
 
-		va_list args;
+		std::va_list args;
+        char debug_message[DEBUG_MESSAGE_MAX_SIZE];
 
-	}
+        va_start(args, format);
+        snprintf(debug_message, sizeof(debug_message), format, args);
+        ss << std::string(debug_message);
 
-	bool is_create_file() const {
-		return this->_enable_create_file;
+        std::string log_message(ss.str());
+
+        std::cout << log_message << '\n';
+
+        if (logger::is_valid_file_path(configuration.file_path)) {
+            if (logger::is_enable_write_permission(configuration.file_path)) {
+                std::ofstream file_stream(configuration.file_path, std::ios_base::app);
+
+                if (file_stream.is_open()) {
+                    file_stream << log_message << '\n';
+                    file_stream.close();
+
+                } else {
+                    std::cerr << "Fail to open '" << configuration.file_path << "' file for write log.\n";
+                }
+
+            } else {
+                std::cerr << "Don't have access to this file write.\n";
+            }
+
+        } else {
+            std::cerr << "File path is invalid. " << configuration.file_path << '\n';
+        }
 	}
 
 private:
-	std::string get_current_timestamp_string() const {
-		using system_clock = std::chrono::system_clock;
+	static std::string get_current_timestamp_string() {
+        using system_clock = std::chrono::system_clock;
 
 		auto now_point(system_clock::now());
 		auto now_time_t(system_clock::to_time_t(now_point));
-		auto now_time_format(std::localtime(now_time_t));
+		auto now_time_format(std::localtime(&now_time_t));
 		std::ostringstream oss;
 
 		oss << std::put_time(now_time_format, "%Y-%m-%d %H:%M:%S");
@@ -76,13 +110,22 @@ private:
 		return oss.str();
 	}
 
-private:
-	logger_configuration _configuration;
-	bool _enable_create_file;
-	static log_level_string const __LEVELS[4] = {
-		"DEBUG",
-		"INFO",
-		"WARNING",
-		"ERROR"
-	};
+    static bool is_valid_file_path(std::string const& file_path) {
+        return (std::filesystem::exists(file_path) && std::filesystem::is_regular_file(file_path));
+    }
+
+    static bool is_enable_write_permission(std::string const& file_path) {
+        std::error_code code;
+        std::filesystem::perms permissions(std::filesystem::status(file_path, code).permissions());
+
+        if (code) {
+            std::cerr << "Fail to get file write permission. " << code.message() << '\n';
+
+            return false;
+        }
+
+        return (permissions & std::filesystem::perms::owner_write) != std::filesystem::perms::none;
+    }
 };
+
+#define LOG(conf, fmt, ...) logger.log(conf, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
