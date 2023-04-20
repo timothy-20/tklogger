@@ -41,18 +41,15 @@ public:
 
 		ss << this->get_current_timestamp_string() << ' ';
 		ss << '[' << logger::__LEVELS[level] << "] ";
-		
-		// 파일명 표시 옵션이 활성화되어 있는 경우
+
 		if (this->_configuration.show_file_name) {
 			ss << file_name << ' ';
 		}
 
-		// 함수명 표시 옵션이 활성화되어 있는 경우
 		if (this->_configuration.show_function_name) {
 			ss << function_name << ' ';
 		}
 
-		// 실행 라인 표시 옵션이 활성화되어 있는 경우
 		if (this->_configuration.show_line_number) {
 			ss << line_number << ' ';
 		}
